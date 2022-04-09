@@ -5,6 +5,7 @@
 # IntelliJ prject files
 .DS_Store
 .idea/
+out
 
 
 # IntelliJ
