@@ -34,15 +34,17 @@ public class GoodsController {
     @Autowired
     GoodsService goodsService;
 
+
+    /*
+    * QPS: 6951
+    * 40000 * 10
+    * */
     @RequestMapping("/to_list")
     public String list(Model model, MiaoshaUser user){
         model.addAttribute("user", user);
 
         // 查询商品列表
         List<GoodsVo>  goodsList = goodsService.listGoodsVo();
-        for (GoodsVo goodsVo : goodsList) {
-            log.info(String.valueOf(goodsVo));
-        }
         model.addAttribute("goodsList", goodsList);
         return "goods_list";
     }

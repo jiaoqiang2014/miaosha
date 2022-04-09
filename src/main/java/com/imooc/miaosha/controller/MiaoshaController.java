@@ -36,6 +36,12 @@ public class MiaoshaController {
     @Autowired
     MiaoshaService miaoshaService;
 
+    /*
+    * QPS: 1474
+    * 4000 * 10
+    *
+    * 出现了买超现象，下面代码单个用户是没有问题的，但多个用户时，可能多个用户同时判断库存和检查重复秒杀通过，都进入购买环节，导致失败。
+    * */
     @RequestMapping("/do_miaosha")
     public String list(Model model, MiaoshaUser miaosUser, @RequestParam("goodsId")long goodsId){
         // @RequestParam("goodsId")long goodsId 从 good_detail.html 中的
