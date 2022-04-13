@@ -1,6 +1,7 @@
 package com.imooc.miaosha.vo;
 
 import com.imooc.miaosha.domain.Goods;
+import com.imooc.miaosha.server.GoodsService;
 
 import java.util.Date;
 
@@ -9,6 +10,7 @@ public class GoodsVo extends Goods {
     private Integer stockCount;
     private Date startDate;
     private Date endDate;
+
 
     public Double getMiaoshaPrice() {
         return miaoshaPrice;

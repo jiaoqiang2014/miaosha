@@ -1,12 +1,11 @@
 package com.imooc.miaosha.redis;
 
+import com.sun.org.apache.xpath.internal.operations.Or;
+
 public class OrderKey extends BasePrefix{
     public OrderKey(String prefix) {
         super(prefix);
     }
 
-    @Override
-    public int expireSeconds() {
-        return 0;
-    }
+    public static OrderKey getMiaoshaOrderByUidGid = new OrderKey("moug");
 }

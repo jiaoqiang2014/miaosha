@@ -34,6 +34,7 @@ public class LoginController {
     public Result<String> doLogin(HttpServletResponse response, @Valid LoginVo loginVo){
         log.info(loginVo.toString());
         String token = userService.login(response, loginVo);
+        log.info(token);
         return Result.success(token);
     }
 }
