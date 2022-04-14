@@ -15,6 +15,8 @@ import com.imooc.miaosha.server.GoodsService;
 import com.imooc.miaosha.server.MiaoshaService;
 import com.imooc.miaosha.server.MiaoshaUserService;
 import com.imooc.miaosha.server.OrderServer;
+import com.imooc.miaosha.util.MD5Util;
+import com.imooc.miaosha.util.UUIDUtil;
 import com.imooc.miaosha.vo.GoodsVo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +27,10 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import redis.clients.jedis.BinaryClient;
 
+import javax.imageio.ImageIO;
+import javax.servlet.http.HttpServletResponse;
+import java.awt.image.BufferedImage;
+import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,56 +73,45 @@ public class MiaoshaController implements InitializingBean {
         }
     }
 
-  /*
-    *//*
-    *
-    * 没有使用页面静态化
-    * QPS: 1474
-    * 4000 * 10
-    *
-    * 出现了买超现象，下面代码单个用户是没有问题的，但多个用户时，可能多个用户同时判断库存和检查重复秒杀通过，都进入购买环节，导致失败。
-    * *//*
-    @RequestMapping("/do_miaosha")
-    public String list(Model model, MiaoshaUser miaosUser, @RequestParam("goodsId")long goodsId){
-        // @RequestParam("goodsId")long goodsId 从 good_detail.html 中的
-            //        <td>
-            //        	<form id="miaoshaForm" method="post" action="/miaosha/do_miaosha">
-            //        		<button class="btn btn-primary btn-block" type="submit" id="buyButton">立即秒杀</button>
-            //        		<input type="hidden" name="goodsId" th:value="${goods.id}" />
-            //        	</form>
-            //        </td>
-        // 的接受goodsId值，long类型。
-        model.addAttribute("user", miaosUser);
-        if(miaosUser == null){
-            return "login";
-        }
 
-        // 判断库存
-        GoodsVo goods = goodsService.getGoodsVoByGoodsId(goodsId);
-        int stock = goods.getGoodsStock();
-        if (stock <= 0){
-            model.addAttribute("errmsg", CodeMsg.MIAO_SHA_OVER.getMsg());
-            log.info("库存不足");
-            return "miaosha_fail";
+    @RequestMapping(value="/verifyCode", method=RequestMethod.GET)
+    @ResponseBody
+    public Result<String> getMiaoshaVerifyCod(HttpServletResponse response, MiaoshaUser user,
+                                              @RequestParam("goodsId")long goodsId) {
+        if(user == null) {
+            return Result.error(CodeMsg.SESSION_ERROR);
         }
-        // 判断是否重复下单,生成用户对应的秒杀订单表示已经秒杀到了。
-        MiaoshaOrder order = orderServer.getMiaoshaOrderByUserIdGoodsId(miaosUser.getId(), goodsId);
-        if (order != null){
-            model.addAttribute("errmsg", CodeMsg.REPEATE_MIAOSHA.getMsg());
-            log.info("重复秒杀");
-            return "miaosha_fail";
+        try {
+            BufferedImage image  = miaoshaService.createVerifyCode(user, goodsId);
+            OutputStream out = response.getOutputStream();
+            ImageIO.write(image, "JPEG", out);
+            out.flush();
+            out.close();
+            return null;
+        }catch(Exception e) {
+            e.printStackTrace();
+            return Result.error(CodeMsg.MIAOSHA_FAIL);
         }
-
-        // 减库存，下订单，写入秒杀订单（原子操作）
-        OrderInfo orderInfo = miaoshaService.miaosha(miaosUser, goods);
-        model.addAttribute("orderInfo", orderInfo); // 秒杀成功后将订单信息直接写入到页面上
-        model.addAttribute("goods", goods);
-        model.addAttribute("miaosUser", miaosUser);
-        log.info("秒杀之后订单信息：" + orderInfo.getGoodsName(), orderInfo.getGoodsCount(),orderInfo.getGoodsId());
-        log.info("秒杀之后商品信息：" + goods.getGoodsDetail(), goods.getGoodsName() + " 秒杀之后的库存：" + goods.getGoodsStock());
-        return "order_detail";
     }
-  */
+
+    @RequestMapping(value = "/path", method = RequestMethod.GET)
+    @ResponseBody
+    public Result<String> getMiaoshaPath(Model model, MiaoshaUser miaosUser,
+                                         @RequestParam("goodsId")long goodsId,
+                                         @RequestParam("verifyCode")int verifyCode) {
+        model.addAttribute("user", miaosUser);
+        if (miaosUser == null) {
+            return Result.error(CodeMsg.SERVER_ERROR);
+        }
+
+        boolean check = miaoshaService.checkVerifyCode(miaosUser, goodsId, verifyCode);
+        if(!check) {
+            return Result.error(CodeMsg.REQUEST_ILLEGAL);
+        }
+
+        String path = miaoshaService.creteMiaoshaPath(miaosUser, goodsId);
+        return Result.success(path);
+    }
 
     /*
      * QPS: 1474
@@ -124,34 +119,19 @@ public class MiaoshaController implements InitializingBean {
      *
      * 出现了买超现象，下面代码单个用户是没有问题的，但多个用户时，可能多个用户同时判断库存和检查重复秒杀通过，都进入购买环节，导致失败。
      * */
-    @RequestMapping(value = "/do_miaosha", method = RequestMethod.POST)
+    @RequestMapping(value = "{path}/do_miaosha", method = RequestMethod.POST)
     @ResponseBody
-    public Result<Integer> miaosha(Model model, MiaoshaUser miaosUser, @RequestParam("goodsId")long goodsId){
+    public Result<Integer> miaosha(Model model, MiaoshaUser miaosUser, @RequestParam("goodsId")long goodsId, @PathVariable("path") String path){
         model.addAttribute("user", miaosUser);
         if(miaosUser == null){
             return Result.error(CodeMsg.SERVER_ERROR);
         }
 
-        /*
-        // 判断库存
-        GoodsVo goods = goodsService.getGoodsVoByGoodsId(goodsId);
-        log.info("商品ID：" + goods.getId() + " 库存为: " + goods.getStockCount() + " 名称：" + goods.getGoodsName());
-        int stock = goods.getStockCount();
-        if (stock <= 0){
-            return Result.error(CodeMsg.MIAO_SHA_OVER);
+        // 校验path
+        boolean check = miaoshaService.checkPath(miaosUser, goodsId, path);
+        if (!check){
+            Result.error(CodeMsg.REQUEST_ILLEGAL);
         }
-        // 判断是否重复下单,生成用户对应的秒杀订单表示已经秒杀到了。
-        MiaoshaOrder order = orderServer.getMiaoshaOrderByUserIdGoodsId(miaosUser.getId(), goodsId);
-        if (order != null){
-            log.info("重复秒杀");
-            return Result.error(CodeMsg.REPEATE_MIAOSHA);
-        }
-
-        // 减库存，下订单，写入秒杀订单（原子操作）
-        OrderInfo orderInfo = miaoshaService.miaosha(miaosUser, goods);
-        log.info("订单名：" + orderInfo.getGoodsName());
-        return Result.success(orderInfo);
-         */
 
         // 调用内存标记，查看是否秒杀结束，可以减少redis访问
         boolean over = localOverMap.get(goodsId);
@@ -180,35 +160,6 @@ public class MiaoshaController implements InitializingBean {
         sender.sendMiaoshaMessage(mm);
         return Result.success(0);   // 0 表示排队中
     }
-
-    /*
-    @RequestMapping("/to_detail/{goodsId}")
-    public String detail(Model model, MiaoshaUser user, @PathVariable("goodsId")long goodsId){
-        model.addAttribute("user", user);
-        GoodsVo goods = goodsService.getGoodsVoByGoodsId(goodsId);
-        model.addAttribute("goods", goods);
-
-        long startAt = goods.getStartDate().getTime();
-        long endAt = goods.getEndDate().getTime();
-        long now = System.currentTimeMillis();
-
-        int miaoshaStatus = 0;
-        int remainSeconds = 0;
-        if (now < startAt){     // 秒杀没开始，倒计时
-            miaoshaStatus = 0;
-            remainSeconds = (int) ((startAt - now) / 1000);
-        }else if (now > endAt){
-            miaoshaStatus = 2;
-            remainSeconds = -1;
-        }else{
-            miaoshaStatus = 1;
-            remainSeconds = 0;
-        }
-        model.addAttribute("miaoshaStatus", miaoshaStatus);
-        model.addAttribute("remainSeconds", remainSeconds);
-        return "goods_detail";
-    }
-*/
 
     /*
     * 返回：
